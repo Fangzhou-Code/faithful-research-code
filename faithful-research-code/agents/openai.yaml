@@ -1,0 +1,4 @@
+interface:
+  display_name: "科研代码忠实生成"
+  short_description: "生成、审计并封装可追溯、可复现且无静默语义回退的科研代码"
+  default_prompt: "Use $faithful-research-code to implement the minimum sufficient research workflow, trace paper claims to executable results, reject unauthorized semantic fallbacks, and produce reviewer-ready documentation."
