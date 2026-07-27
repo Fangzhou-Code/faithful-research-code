@@ -1,0 +1,74 @@
+[
+  {
+    "id": "trigger-equation-implementation",
+    "should_trigger": true,
+    "prompt": "Implement the estimator in equations 2-6 exactly, including the stated reduction axes and stop-gradient boundary.",
+    "expected": ["SPEC_IMPLEMENTATION", "source-to-code table", "equation and gradient tests"]
+  },
+  {
+    "id": "trigger-paper-reproduction",
+    "should_trigger": true,
+    "prompt": "Reproduce this paper's multi-stage main experiment from the paper and supplement without using the released source code, then explain the implemented workflow and the technical principle of every stage.",
+    "expected": ["EXACT_REPRODUCTION", "conflict and unknown ledger", "ordered as-implemented workflow", "claim-to-artifact manifest", "selection and baseline protocol", "reviewer-executable artifact", "grounded README", "bounded reproduction claim"]
+  },
+  {
+    "id": "trigger-stochastic-simulation",
+    "should_trigger": true,
+    "prompt": "Generate the Monte Carlo simulation and verify that the reported distribution is reproduced across seeds.",
+    "expected": ["seed scope", "experimental unit", "repeated trials", "uncertainty interval", "failed-run handling", "predeclared statistical acceptance"]
+  },
+  {
+    "id": "trigger-data-pipeline",
+    "should_trigger": true,
+    "prompt": "Implement the benchmark data pipeline; do not silently discard malformed or over-length samples.",
+    "expected": ["membership and coverage accounting", "negative fail-fast tests", "no silent filtering"]
+  },
+  {
+    "id": "trigger-evaluator",
+    "should_trigger": true,
+    "prompt": "Implement the official evaluator and aggregation denominator from this benchmark specification.",
+    "expected": ["PROTOCOL_DEFINED", "official evaluator identity", "coverage and denominator tests", "paper-result command and raw-output mapping"]
+  },
+  {
+    "id": "trigger-ablation",
+    "should_trigger": true,
+    "prompt": "Create an ablation that removes only the auxiliary loss while keeping every other setting fixed, and document the main and ablation commands and parameters separately in README.md.",
+    "expected": ["ABLATION", "one semantic delta", "separate main and ablation instructions", "concise parameter roles", "baseline parity", "artifact compatibility check"]
+  },
+  {
+    "id": "trigger-source-conflict",
+    "should_trigger": true,
+    "prompt": "The paper equation uses a sum but the reference code uses a mean. Implement the method faithfully.",
+    "expected": ["conflict ledger", "no silent precedence", "block or parameterize"]
+  },
+  {
+    "id": "trigger-audit",
+    "should_trigger": true,
+    "prompt": "Audit this generated training code for retries, clipping, sample skipping, and compatibility paths that change the method.",
+    "expected": ["AUDIT", "reconstruct actual workflow", "semantic fallback audit", "unnecessary component audit", "no edit without request"]
+  },
+  {
+    "id": "no-trigger-web-feature",
+    "should_trigger": false,
+    "prompt": "Add a responsive navigation bar to this marketing website.",
+    "expected": ["ordinary implementation workflow"]
+  },
+  {
+    "id": "no-trigger-production-refactor",
+    "should_trigger": false,
+    "prompt": "Refactor this billing service to reduce duplication without changing its public behavior.",
+    "expected": ["ordinary behavior-preserving refactor workflow"]
+  },
+  {
+    "id": "no-trigger-security",
+    "should_trigger": false,
+    "prompt": "Add authorization checks and secret redaction to this API endpoint.",
+    "expected": ["retain genuine security boundaries"]
+  },
+  {
+    "id": "no-trigger-docs",
+    "should_trigger": false,
+    "prompt": "Rewrite this installation guide for clarity without changing code.",
+    "expected": ["documentation workflow"]
+  }
+]
