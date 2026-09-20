@@ -56,6 +56,16 @@ These mechanisms may be reasonable in engineering systems, but in research code 
 
 Ordinary web development, production-service refactoring, authentication security, and documentation-only edits should not trigger this Skill.
 
+## Dashboard Example
+
+This screenshot comes from the bundled HTML viewer using **simulated events and Token counts**. No external model was called. It shows the interface, not research results.
+
+![Research workflow and Token dashboard with two concurrent branches and reported, estimated, and unknown usage](faithful-research-code/assets/dashboard-example.jpg)
+
+- **Top panel:** active stages, reported versus estimated input/output Tokens, and per-request status. Missing usage remains unknown.
+- **Workflow:** loading is complete; the main and ablation branches are both running; the evaluation stage waits for both. Nodes show requirement IDs from the project's `idea.md` and offer expandable descriptions in the live viewer.
+- **Updates:** the local HTML viewer updates at stage transitions or explicit batch/round boundaries; failures and observation changes also trigger updates. The image in this README is a static preview. Follow [Compact Output and Live Workflow](#compact-output-and-live-workflow) to open the local viewer for your own project.
+
 ## Core Workflow
 
 The existing HTML viewer combines workflow progress with reported/estimated Token usage and request details. Research programs must explicitly record actual call observations; missing or uninstrumented usage is unknown, and Codex conversation usage is not inferred. See the [usage integration contract](faithful-research-code/references/usage-dashboard.md).
@@ -307,6 +317,7 @@ The auditor requires Python 3.11+ and accepts `--config resolved.json resolved.t
     ├── assets/research-readme-template.md
     ├── assets/progress-plan.example.json
     ├── assets/execution-plan.example.json
+    ├── assets/dashboard-example.jpg
     ├── assets/behavior-eval/
     ├── references/code-generation-contract.md
     ├── references/idea-and-review.md

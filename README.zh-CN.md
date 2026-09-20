@@ -50,6 +50,16 @@ Codex 是通用代码智能体，其默认行为更像一名软件工程师，�
 
 普通 Web 开发、生产服务重构、认证安全和纯文档编辑不应触发本 Skill。
 
+## 面板样例
+
+下图截自内置 HTML 查看器，使用**模拟事件和 Token 数字**，没有调用外部模型。它展示界面功能，不代表科研实验结果。
+
+![科研流程与 Token 监控面板：两个并发分支，以及报告值、估算值和未知用量](faithful-research-code/assets/dashboard-example.jpg)
+
+- **上方面板**：展示当前阶段、服务端报告与本地估算的输入/输出 Token，以及逐请求状态；缺失用量保留为未知。
+- **下方流程**：数据加载已经完成，主实验和消融分支同时运行，评估节点等待两条分支完成。节点显示项目 `idea.md` 的需求编号，实际查看器可展开详细说明。
+- **更新方式**：本地 HTML 在阶段转换或显式批次/轮次边界更新；失败及观察状态变化也会触发更新。README 中是静态预览，启动自己项目的查看器请参见[精简输出与实时流程图](#精简输出与实时流程图)。
+
 ## 核心工作流
 
 现有 HTML 同时提供流程与 Token 监控：当前阶段、并发分支、服务端报告用量、本地估算和请求明细。用量需要在科研程序的真实调用处显式接入；未接入或缺失时显示未知，不推算 Codex 对话用量。参见 [用量接入规范](faithful-research-code/references/usage-dashboard.md)。
@@ -273,6 +283,7 @@ HTML 每秒检查轻量状态接口，流程图与 Token 面板在阶段转换�
     ├── assets/research-readme-template.md
     ├── assets/progress-plan.example.json
     ├── assets/execution-plan.example.json
+    ├── assets/dashboard-example.jpg
     ├── assets/behavior-eval/
     ├── references/code-generation-contract.md
     ├── references/idea-and-review.md
