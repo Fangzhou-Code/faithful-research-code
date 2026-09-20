@@ -60,7 +60,9 @@ Ordinary web development, production-service refactoring, authentication securit
 
 This screenshot comes from the bundled HTML viewer using **simulated events and Token counts**. No external model was called. It shows the interface, not research results.
 
-![Research workflow and Token dashboard with two concurrent branches and reported, estimated, and unknown usage](faithful-research-code/assets/dashboard-example.jpg)
+The English preview uses `serve <run-dir> --lang en`. Choose `--lang zh-CN` for the Chinese interface. Titles, node descriptions and evidence remain in the language provided by your project; the viewer does not rewrite research records.
+
+![Research workflow and Token dashboard with two concurrent branches and reported, estimated, and unknown usage](faithful-research-code/assets/dashboard-example.en.jpg)
 
 - **Top panel:** active stages, reported versus estimated input/output Tokens, and per-request status. Missing usage remains unknown.
 - **Workflow:** loading is complete; the main and ablation branches are both running; the evaluation stage waits for both. Nodes show requirement IDs from the project's `idea.md` and offer expandable descriptions in the live viewer.
@@ -290,7 +292,7 @@ Requires Python 3.11+. Adapt the [example plan](faithful-research-code/assets/pr
 
 ```bash
 python faithful-research-code/scripts/research_progress.py init runs/progress-001 --plan project-plan.json
-python faithful-research-code/scripts/research_progress.py serve runs/progress-001
+python faithful-research-code/scripts/research_progress.py serve runs/progress-001 --lang en
 ```
 
 Open the printed local URL. Use `event` at actual generation boundaries and `stage()` around actual scientific work. See [progress and output](faithful-research-code/references/progress-and-output.md) for integration and limitations. The scientific pipeline retains tracebacks and partial artifacts; the progress journal records only exception types. Chat Mermaid diagrams are snapshots. A hard kill can leave a last-known running state; the viewer never infers success.
@@ -317,7 +319,8 @@ The auditor requires Python 3.11+ and accepts `--config resolved.json resolved.t
     ├── assets/research-readme-template.md
     ├── assets/progress-plan.example.json
     ├── assets/execution-plan.example.json
-    ├── assets/dashboard-example.jpg
+    ├── assets/dashboard-example.en.jpg
+    ├── assets/dashboard-example.zh-CN.jpg
     ├── assets/behavior-eval/
     ├── references/code-generation-contract.md
     ├── references/idea-and-review.md
@@ -346,7 +349,7 @@ Executable local demonstration, with no scientific reproduction claim:
 
 ```bash
 python faithful-research-code/scripts/run_research_workflow.py faithful-research-code/assets/execution-plan.example.json runs/local-example
-python faithful-research-code/scripts/research_progress.py serve runs/local-example
+python faithful-research-code/scripts/research_progress.py serve runs/local-example --lang en
 ```
 
 The runner requires explicit `direct_children_only` scope. Nested multiprocessing, remote jobs, and detached daemons need their own appropriate supervisor. A failed run has no `RUN_COMPLETE.json` and its partial artifacts must not enter formal aggregation. A completion manifest establishes command execution, not scientific correctness.

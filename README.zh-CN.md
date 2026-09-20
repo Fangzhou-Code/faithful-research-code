@@ -54,7 +54,9 @@ Codex 是通用代码智能体，其默认行为更像一名软件工程师，�
 
 下图截自内置 HTML 查看器，使用**模拟事件和 Token 数字**，没有调用外部模型。它展示界面功能，不代表科研实验结果。
 
-![科研流程与 Token 监控面板：两个并发分支，以及报告值、估算值和未知用量](faithful-research-code/assets/dashboard-example.jpg)
+中文界面使用 `serve <run-dir> --lang zh-CN`，英文界面使用 `--lang en`。项目标题、节点说明和证据保留项目填写的语言；查看器不会改写科研记录。
+
+![科研流程与 Token 监控面板：两个并发分支，以及报告值、估算值和未知用量](faithful-research-code/assets/dashboard-example.zh-CN.jpg)
 
 - **上方面板**：展示当前阶段、服务端报告与本地估算的输入/输出 Token，以及逐请求状态；缺失用量保留为未知。
 - **下方流程**：数据加载已经完成，主实验和消融分支同时运行，评估节点等待两条分支完成。节点显示项目 `idea.md` 的需求编号，实际查看器可展开详细说明。
@@ -256,7 +258,7 @@ value = value.clip(-1, 1)
 
 ```bash
 python faithful-research-code/scripts/research_progress.py init runs/progress-001 --plan project-plan.json
-python faithful-research-code/scripts/research_progress.py serve runs/progress-001
+python faithful-research-code/scripts/research_progress.py serve runs/progress-001 --lang zh-CN
 ```
 
 打开终端打印的本地地址。生成过程用 `event` 写入真实状态；生成的实验代码用 `stage()` 包裹实际工作。完整接口和限制见 [进度与输出规范](faithful-research-code/references/progress-and-output.md)。原始报错和中间产物仍由科研管线保留，进度日志只记录异常类型。聊天 Mermaid 是快照；进程被强杀后仅有最后已知状态，查看器不虚构进度或成功。
@@ -283,7 +285,8 @@ HTML 每秒检查轻量状态接口，流程图与 Token 面板在阶段转换�
     ├── assets/research-readme-template.md
     ├── assets/progress-plan.example.json
     ├── assets/execution-plan.example.json
-    ├── assets/dashboard-example.jpg
+    ├── assets/dashboard-example.en.jpg
+    ├── assets/dashboard-example.zh-CN.jpg
     ├── assets/behavior-eval/
     ├── references/code-generation-contract.md
     ├── references/idea-and-review.md
@@ -312,7 +315,7 @@ README 和可选的验证记录位于 GitHub 仓库根目录，不属于实际�
 
 ```bash
 python faithful-research-code/scripts/run_research_workflow.py faithful-research-code/assets/execution-plan.example.json runs/local-example
-python faithful-research-code/scripts/research_progress.py serve runs/local-example
+python faithful-research-code/scripts/research_progress.py serve runs/local-example --lang zh-CN
 ```
 
 运行器要求显式声明 `direct_children_only`，不适用于嵌套多进程、远程任务或脱离管理的守护进程。失败运行没有 `RUN_COMPLETE.json`，部分产物不得进入正式统计；该凭据本身也不代表科学结论正确。
