@@ -241,7 +241,9 @@ All content must come from the actual code and available sources. Commands, resu
 
 Operational failures are strictly fail-fast: disable implicit SDK/HTTP retries, stop without substitution or sample skipping, and preserve failed-run evidence. Only steps predeclared in the scientific method remain valid; logging, tests, and suppression comments do not authorize recovery. Default to serial execution and verify ordering, random streams, and failure propagation for protocol-defined concurrency.
 
-New rules cover implicit SDK retries (RF504), retry configuration (RF505), concurrency (RF601), exceptions returned as values (RF602), quantile methods (RF701), and thread initialization order (RF702). Retry rule RF501 is now high severity. Direct import aliases are recognized; this is not cross-module data-flow analysis. Missing inputs and empty scans return an error.
+Rules cover implicit SDK retries (RF504), retry configuration (RF505), concurrency (RF601), exceptions returned as values (RF602), quantile methods (RF701), and thread initialization order (RF702). Retry rule RF501 is high severity. Import aliases and local bindings are tracked by scope, so function-local imports and parameters do not overwrite outer bindings. Function-body imports are not treated as already executed module imports; unresolved execution order requires review. This is not cross-module data-flow analysis. Missing inputs and empty scans return an error.
+
+For NumPy quantile and percentile functions, RF701 recognizes `method=` or the sixth positional argument; the fifth argument is `overwrite_input`. Dynamic argument unpacking requires review rather than being assumed to specify the estimator.
 
 The repository includes a supplementary Python auditor:
 
@@ -283,6 +285,10 @@ python faithful-research-code/scripts/research_progress.py serve runs/progress-0
 
 Open the printed local URL. Use `event` at actual generation boundaries and `stage()` around actual scientific work. See [progress and output](faithful-research-code/references/progress-and-output.md) for integration and limitations. The scientific pipeline retains tracebacks and partial artifacts; the progress journal records only exception types. Chat Mermaid diagrams are snapshots. A hard kill can leave a last-known running state; the viewer never infers success.
 
+The HTML page checks a lightweight status endpoint once per second. The graph and Token panel update at stage transitions or explicit batch/round progress events; request failures and changes in supervisor observation also trigger an update. Concurrent branches retain their own states. Successful per-request usage is still logged immediately and becomes visible at the next display boundary; a newly opened page shows the latest recorded state.
+
+The persistent writer and viewer process newly appended events after initial reconstruction, using a request-ID index and incremental usage totals. They do not replay the entire history on every write or poll. Complete logs remain available for audit and independent reconstruction. An uncertain journal write retains the writer lock to prevent continuation across cache eviction or process restart; no automatic resend or log repair occurs.
+
 Concurrent workers must use the serial collector started with `collect --endpoint <private-endpoint.json>` through `event --collector` or `stage(..., collector=...)`. The collector serializes journal writes, not science; it never retries events or cancels scientific processes. Predeclare conditional nodes with `condition`, and joins accepting skipped inputs with `optional_dependencies`. Use a frozen `total` and `update --completed N` for real work counts.
 
 The auditor requires Python 3.11+ and accepts `--config resolved.json resolved.toml` to inspect configured retry/concurrency policies. Its JSON report explicitly lists unverified runtime/dynamic surfaces. Export YAML or executable configuration from the actual launcher rather than treating a static scan as complete verification.
@@ -293,19 +299,28 @@ The auditor requires Python 3.11+ and accepts `--config resolved.json resolved.t
 .
 ├── README.md
 ├── README.zh-CN.md
+├── VALIDATION.zh-CN.md
 └── faithful-research-code/
     ├── SKILL.md
     ├── agents/openai.yaml
+    ├── assets/research-idea-template.md
     ├── assets/research-readme-template.md
     ├── assets/progress-plan.example.json
+    ├── assets/execution-plan.example.json
+    ├── assets/behavior-eval/
     ├── references/code-generation-contract.md
+    ├── references/idea-and-review.md
     ├── references/progress-and-output.md
+    ├── references/usage-dashboard.md
+    ├── references/runtime-verification.md
     ├── scripts/audit_semantic_fallbacks.py
     ├── scripts/research_progress.py
+    ├── scripts/run_research_workflow.py
+    ├── scripts/evaluate_behavior.py
     └── tests/
 ```
 
-The repository-level README files are not part of the installed Skill package.
+The repository-level README files and optional validation record are not part of the installed Skill package.
 
 ## Validation
 
@@ -313,6 +328,8 @@ See [runtime verification](faithful-research-code/references/runtime-verificatio
 
 - `scripts/run_research_workflow.py` optionally supervises an explicit local command DAG, including direct-child failure, timeout, cancellation, heartbeat, retained logs, and a completion manifest. Reuse an existing suitable scheduler instead of adding a second one.
 - `scripts/evaluate_behavior.py` runs the same scientific behavior checks against separately generated candidates, retaining PASS/FAIL/TIMEOUT, code hashes, and logs. PASS requires all eight checks' completion evidence as well as exit code zero, including a correct published result; early exit and skipped checks fail. The frozen prompt/reference under `assets/behavior-eval/` tests the harness and supports repeatable comparisons; a reference rerun is not new cross-model evidence.
+
+The evaluator saves candidate and test source snapshots before execution. It verifies the candidate snapshot hash and executes those source bytes directly with `compile`/`exec`, bypassing stale candidate bytecode. Reported hashes identify the saved snapshots even if the original source changes during evaluation. Imported helper modules and dependencies still require separate version pinning.
 
 Executable local demonstration, with no scientific reproduction claim:
 
@@ -331,7 +348,9 @@ python3 -m unittest discover \
   -p 'test_*.py'
 ```
 
-Tests cover contract routing, trigger-fixture integrity, auditor exit codes, aliases and retry/concurrency rules, suppression trails, progress transitions, failure evidence, and viewer endpoints. Trigger-fixture checks do not measure actual model activation accuracy or research-generation behavior.
+The latest local validation on 2026-09-20 passed **81 repository tests**. Coverage includes contract routing, trigger-fixture integrity, scoped aliases and parameter shadowing, quantile arguments, retry/concurrency rules, stale-bytecode regressions, source-hash consistency, progress transitions, and failure evidence. Incremental monitoring tests compare totals with complete reconstruction for 10,000 simulated requests and check partial records, replaced/truncated logs, and uncertain writes. Browser checks verified that per-request logging does not redraw the panel until a stage/progress boundary. Details are recorded in [VALIDATION.zh-CN.md](VALIDATION.zh-CN.md).
+
+Trigger-fixture checks do not measure actual model activation accuracy or research-generation behavior; simulated usage and local tests do not establish live-service or paper-reproduction results.
 
 ## Limitations
 

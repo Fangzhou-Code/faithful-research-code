@@ -207,7 +207,9 @@ Use $faithful-research-code to audit this training pipeline for sample dropping,
 
 默认严格 fail-fast：SDK/HTTP 隐式重试必须关闭；失败时停止，不补值、不跳过、不切换能力，并保留失败现场。只有预先定义在科学方法中的步骤可保留，不能用日志、测试或授权注释把运行补救变成方法步骤。并发默认关闭，按协议启用时必须验证顺序、随机流和失败传播。
 
-审计器新增 SDK 默认重试（RF504）、重试配置（RF505）、并发（RF601）、异常结果化（RF602）、分位数方法（RF701）、线程环境顺序（RF702）检查；RF501 重试提示升为高等级。支持直接导入别名，但不做跨模块数据流证明。不存在的路径、空扫描返回错误。
+审计器覆盖 SDK 默认重试（RF504）、重试配置（RF505）、并发（RF601）、异常结果化（RF602）、分位数方法（RF701）、线程环境顺序（RF702）检查；RF501 重试提示为高等级。按作用域跟踪导入别名与局部绑定，函数内部导入和参数不会覆盖外层绑定。函数体中的导入不被当作模块已经执行的导入；无法确定的执行顺序需核查，不做跨模块数据流证明。不存在的路径、空扫描返回错误。
+
+对于 NumPy 分位数函数，RF701 识别 `method=` 或第六个位置参数；第五个参数是 `overwrite_input`。动态展开参数会提示核查，不被直接视为已经指定分位数方法。
 
 仓库附带一个辅助审计器：
 
@@ -249,6 +251,10 @@ python faithful-research-code/scripts/research_progress.py serve runs/progress-0
 
 打开终端打印的本地地址。生成过程用 `event` 写入真实状态；生成的实验代码用 `stage()` 包裹实际工作。完整接口和限制见 [进度与输出规范](faithful-research-code/references/progress-and-output.md)。原始报错和中间产物仍由科研管线保留，进度日志只记录异常类型。聊天 Mermaid 是快照；进程被强杀后仅有最后已知状态，查看器不虚构进度或成功。
 
+HTML 每秒检查轻量状态接口，流程图与 Token 面板在阶段转换或显式批次/轮次进度事件发生时更新；请求失败、监督器观察状态变化也会触发更新。并发分支保持各自状态。成功请求的用量仍逐条即时写入日志，在下一个展示边界更新到面板；新打开页面会显示最新记录状态。
+
+持久记录进程和查看器在首次重建后只处理新增事件，使用请求 ID 索引及增量用量汇总，避免每次写入或查询都从头回放历史。完整日志仍保留，供审计和独立重建。写入结果不明时保留写入锁，即使缓存被驱逐或进程重启也不能继续该运行；不自动重发或修复日志。
+
 并发工作进程须通过 `collect --endpoint <private-endpoint.json>` 启动的统一记录端提交事件，使用 `event --collector` 或 `stage(..., collector=...)`。记录端串行落盘，不串行执行科研任务，不自动重试、不代替实验调度器取消进程。条件分支须预声明 `condition`，汇合时可接受的未执行依赖须列入 `optional_dependencies`。已知工作总量可用 `total` 和 `update --completed N` 展示真实计数。
 
 审计器需要 Python 3.11+，支持 `--config resolved.json resolved.toml` 检查配置中的重试和并发策略；JSON 报告明确列出尚未验证的动态配置、实际 SDK 行为等范围。YAML 和可执行配置须先由实际启动器导出解析结果，不能靠静态扫描宣称全部验证通过。
@@ -259,19 +265,28 @@ python faithful-research-code/scripts/research_progress.py serve runs/progress-0
 .
 ├── README.md
 ├── README.zh-CN.md
+├── VALIDATION.zh-CN.md
 └── faithful-research-code/
     ├── SKILL.md
     ├── agents/openai.yaml
+    ├── assets/research-idea-template.md
     ├── assets/research-readme-template.md
     ├── assets/progress-plan.example.json
+    ├── assets/execution-plan.example.json
+    ├── assets/behavior-eval/
     ├── references/code-generation-contract.md
+    ├── references/idea-and-review.md
     ├── references/progress-and-output.md
+    ├── references/usage-dashboard.md
+    ├── references/runtime-verification.md
     ├── scripts/audit_semantic_fallbacks.py
     ├── scripts/research_progress.py
+    ├── scripts/run_research_workflow.py
+    ├── scripts/evaluate_behavior.py
     └── tests/
 ```
 
-README 位于 GitHub 仓库根目录，不属于实际安装的 Skill 包。
+README 和可选的验证记录位于 GitHub 仓库根目录，不属于实际安装的 Skill 包。
 
 ## 验证
 
@@ -279,6 +294,8 @@ README 位于 GitHub 仓库根目录，不属于实际安装的 Skill 包。
 
 - `scripts/run_research_workflow.py` 执行明确的本地命令依赖图，监督直接子进程，处理失败、超时、取消与心跳，保存日志和校验清单。它是可选工具；已有合适调度器的项目无需重复引入。
 - `scripts/evaluate_behavior.py` 对不同来源的候选模块运行同一套科研行为检查，保留 PASS/FAIL/TIMEOUT、代码哈希和日志。PASS 必须同时满足退出码为零、全部八项检查的完成凭据，以及正确的正式报告；提前退出或跳过检查不能通过。固定提示及参考候选位于 `assets/behavior-eval/`；参考候选只用于验证评测工具，不是新的跨模型证据。
+
+评估器在执行前保存候选和测试源码快照，校验候选快照哈希后，用 `compile`/`exec` 直接执行该份源码，避免读取候选的旧字节码。即使原始源码在评估期间发生变化，报告哈希仍对应保存的快照。导入的辅助模块及依赖仍需另行固定版本。
 
 可执行的本地示例（只验证命令流程，不代表科研复现）：
 
@@ -297,7 +314,9 @@ python3 -m unittest discover \
   -p 'test_*.py'
 ```
 
-当前测试覆盖合同路由、触发样例文件的完整性、审计退出码、别名与重试/并发规则、抑制轨迹、进度状态机、失败现场保留和查看器接口。触发样例测试只校验样例文件，不代表实际模型的触发准确率或科研生成能力已完成评测。
+2026-09-20 最近一次本地验证中，**81 项仓库测试全部通过**。覆盖合同路由、触发样例完整性、作用域别名与参数遮蔽、分位数参数、重试/并发规则、旧字节码回归、源码哈希一致性、进度状态和失败证据。增量监控测试对比 10,000 个模拟请求的增量汇总与完整重建，并检查部分记录、日志替换/截断及不确定写入。浏览器检查确认逐请求记录不会重绘面板，阶段或进度边界才触发更新。详细结果保存在 [VALIDATION.zh-CN.md](VALIDATION.zh-CN.md)。
+
+触发样例测试不代表实际模型的触发准确率或科研生成能力已完成评测；模拟用量和本地测试也不构成真实服务或论文复现结果。
 
 ## 局限
 
