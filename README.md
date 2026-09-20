@@ -58,16 +58,23 @@ Ordinary web development, production-service refactoring, authentication securit
 
 ## Core Workflow
 
+The existing HTML viewer combines workflow progress with reported/estimated Token usage and request details. Research programs must explicitly record actual call observations; missing or uninstrumented usage is unknown, and Codex conversation usage is not inferred. See the [usage integration contract](faithful-research-code/references/usage-dashboard.md).
+
+Implementation starts with project-root `idea.md`: the research question, concrete datasets/splits, ordered algorithm steps, main/baseline/ablation experiments, and acceptance conditions. The agent actively asks about consequential ambiguity and pauses dependent work; it does not invent defaults or silently exclude requirements. Each requirement maps to workflow nodes, code, and checks. Scientific changes preserve their authorization and earlier run specifications. See the [idea template](faithful-research-code/assets/research-idea-template.md) and [review protocol](faithful-research-code/references/idea-and-review.md).
+
+The graph below is an overview. Actual project graphs name the real data and algorithm steps. The local live viewer shows requirement IDs and expandable descriptions, with concurrent branches and dependency joins. Colors report execution state, not scientific fidelity. Before handoff, a fresh independent agent reads the specification, original sources/decisions, and code to check drift, missing behavior, and unnecessary functionality; fixes receive a recheck. If that capability is unavailable, the review gap is explicitly reported.
+
 ```mermaid
 flowchart LR
-    A["Paper, equations, protocol, user decisions"] --> B["Research contract and conflict ledger"]
+    A["Paper, equations, protocol, user decisions"] --> B["idea.md, questions and research contract"]
     B --> C["Complete method workflow and scientific invariants"]
     C --> D["Minimal sufficient implementation"]
     D --> E["Main experiment, ablations, and statistical protocol"]
     E --> F["Raw outputs and aggregation/plotting"]
     F --> G["Claims and reviewer-facing artifact evidence"]
     D --> H["Semantic fallback audit"]
-    H --> G
+    H --> R["Fresh independent idea-to-code review"]
+    R --> G
 ```
 
 ### 1. Research Contract
@@ -79,7 +86,7 @@ Every consequential choice is classified as:
 - `USER_DEFINED`: explicitly authorized by the user;
 - `UNKNOWN`: unresolved by the available evidence.
 
-An `UNKNOWN` is never silently implemented. It must block execution, remain parameterized, receive explicit authorization, or be excluded from the conclusion.
+An `UNKNOWN` requires an active clarification question and blocks dependent implementation. Parameterization or exclusion requires an explicit developer decision.
 
 ### 2. Complete Code Workflow
 
@@ -232,12 +239,16 @@ All content must come from the actual code and available sources. Commands, resu
 
 ## Python Semantic Fallback Auditor
 
+Operational failures are strictly fail-fast: disable implicit SDK/HTTP retries, stop without substitution or sample skipping, and preserve failed-run evidence. Only steps predeclared in the scientific method remain valid; logging, tests, and suppression comments do not authorize recovery. Default to serial execution and verify ordering, random streams, and failure propagation for protocol-defined concurrency.
+
+New rules cover implicit SDK retries (RF504), retry configuration (RF505), concurrency (RF601), exceptions returned as values (RF602), quantile methods (RF701), and thread initialization order (RF702). Retry rule RF501 is now high severity. Direct import aliases are recognized; this is not cross-module data-flow analysis. Missing inputs and empty scans return an error.
+
 The repository includes a supplementary Python auditor:
 
 ```bash
 python faithful-research-code/scripts/audit_semantic_fallbacks.py \
   path/to/changed_code \
-  --min-severity low
+  --min-severity low --fail-on medium
 ```
 
 Generate a JSON audit trail:
@@ -257,6 +268,25 @@ value = value.clip(-1, 1)
 
 Suppressed findings remain in the JSON audit trail. This is a Python AST heuristic, not a proof of research fidelity. YAML, Shell, Slurm, notebooks, aggregation, and plotting paths still require manual review.
 
+## Compact Output and Live Workflow
+
+The Skill incorporates compatible minimality ideas from [Ponytail](https://github.com/DietrichGebert/ponytail/blob/main/skills/ponytail/SKILL.md) without requiring another plugin or persistent hooks. Scientific fidelity and evidence take priority over line counts. Write code and complete evidence to files; keep chat to the workflow, changes, validation, and links. No unmeasured token-saving percentage is promised.
+
+Show complete generation and scientific execution dependency graphs separately before coding. Independent nodes appear side by side and can run simultaneously; joins wait for all required dependencies. States include pending, running, succeeded, failed, blocked, confirmed cancellation, conditional skip, and unknown. Failure rejects new starts but retains truthful in-flight outcomes. A stopped track cannot commit reportable scientific results. Completed generation never implies an executed experiment.
+
+Requires Python 3.11+. Adapt the [example plan](faithful-research-code/assets/progress-plan.example.json) to the actual project, then run:
+
+```bash
+python faithful-research-code/scripts/research_progress.py init runs/progress-001 --plan project-plan.json
+python faithful-research-code/scripts/research_progress.py serve runs/progress-001
+```
+
+Open the printed local URL. Use `event` at actual generation boundaries and `stage()` around actual scientific work. See [progress and output](faithful-research-code/references/progress-and-output.md) for integration and limitations. The scientific pipeline retains tracebacks and partial artifacts; the progress journal records only exception types. Chat Mermaid diagrams are snapshots. A hard kill can leave a last-known running state; the viewer never infers success.
+
+Concurrent workers must use the serial collector started with `collect --endpoint <private-endpoint.json>` through `event --collector` or `stage(..., collector=...)`. The collector serializes journal writes, not science; it never retries events or cancels scientific processes. Predeclare conditional nodes with `condition`, and joins accepting skipped inputs with `optional_dependencies`. Use a frozen `total` and `update --completed N` for real work counts.
+
+The auditor requires Python 3.11+ and accepts `--config resolved.json resolved.toml` to inspect configured retry/concurrency policies. Its JSON report explicitly lists unverified runtime/dynamic surfaces. Export YAML or executable configuration from the actual launcher rather than treating a static scan as complete verification.
+
 ## Repository Structure
 
 ```text
@@ -267,14 +297,31 @@ Suppressed findings remain in the JSON audit trail. This is a Python AST heurist
     ├── SKILL.md
     ├── agents/openai.yaml
     ├── assets/research-readme-template.md
+    ├── assets/progress-plan.example.json
     ├── references/code-generation-contract.md
+    ├── references/progress-and-output.md
     ├── scripts/audit_semantic_fallbacks.py
+    ├── scripts/research_progress.py
     └── tests/
 ```
 
 The repository-level README files are not part of the installed Skill package.
 
 ## Validation
+
+See [runtime verification](faithful-research-code/references/runtime-verification.md) for the minimal evidence gate: dynamic behavior needs executed checks; missing checks block the corresponding verification claim rather than becoming a clean static-audit result.
+
+- `scripts/run_research_workflow.py` optionally supervises an explicit local command DAG, including direct-child failure, timeout, cancellation, heartbeat, retained logs, and a completion manifest. Reuse an existing suitable scheduler instead of adding a second one.
+- `scripts/evaluate_behavior.py` runs the same scientific behavior checks against separately generated candidates, retaining PASS/FAIL/TIMEOUT, code hashes, and logs. PASS requires all eight checks' completion evidence as well as exit code zero, including a correct published result; early exit and skipped checks fail. The frozen prompt/reference under `assets/behavior-eval/` tests the harness and supports repeatable comparisons; a reference rerun is not new cross-model evidence.
+
+Executable local demonstration, with no scientific reproduction claim:
+
+```bash
+python faithful-research-code/scripts/run_research_workflow.py faithful-research-code/assets/execution-plan.example.json runs/local-example
+python faithful-research-code/scripts/research_progress.py serve runs/local-example
+```
+
+The runner requires explicit `direct_children_only` scope. Nested multiprocessing, remote jobs, and detached daemons need their own appropriate supervisor. A failed run has no `RUN_COMPLETE.json` and its partial artifacts must not enter formal aggregation. A completion manifest establishes command execution, not scientific correctness.
 
 Run the unit tests:
 
@@ -284,11 +331,11 @@ python3 -m unittest discover \
   -p 'test_*.py'
 ```
 
-The tests cover the Skill contract, trigger boundaries, auditor exit codes, JSON compatibility, suppression trails, and representative scientific semantic fallbacks.
+Tests cover contract routing, trigger-fixture integrity, auditor exit codes, aliases and retry/concurrency rules, suppression trails, progress transitions, failure evidence, and viewer endpoints. Trigger-fixture checks do not measure actual model activation accuracy or research-generation behavior.
 
 ## Limitations
 
-- The auditor currently performs static analysis only on Python;
+- The auditor covers Python AST and explicitly supplied JSON/TOML, but cannot prove dynamic cross-module behavior or real outbound request counts;
 - the Skill cannot replace author confirmation for an unspecified protocol;
 - passing tests does not establish numerical reproduction of a paper;
 - an author-run result cannot be described as an independent third-party reproduction;
