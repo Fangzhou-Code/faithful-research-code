@@ -9,6 +9,30 @@ Treat research code as an executable scientific claim. Optimize for fidelity, ca
 
 Read [references/code-generation-contract.md](references/code-generation-contract.md) before generating or materially changing research code.
 
+## Anchor implementation to the developer's idea
+
+Before implementation, create or update project-root `idea.md` using [assets/research-idea-template.md](assets/research-idea-template.md). Read [references/idea-and-review.md](references/idea-and-review.md) for clarification, change control, and independent review. Preserve existing developer content. This document is the canonical project record of scientific intent, with exact source/user-decision references; it cannot override those sources. Keep the contract, workflow, and semantic-delta tables there rather than creating competing specifications. In read-only `AUDIT`, read the existing document or report its absence without writing one.
+
+Extract already stated decisions without requesting duplicate approval. Actively ask about ambiguity affecting requirements, data, methods, experiments, acceptance criteria, or functionality; mark affected requirements `BLOCKED` and do not implement dependent work until answered. Continue only independent, resolved work. Do not invent a dataset, algorithm step, scientific default, or scope reduction. Routine naming and formatting that cannot affect these choices may use ordinary judgment.
+
+Give requirements stable IDs and map them to concrete workflow nodes, code symbols, and checks. Before each stage, read its relevant requirements; on a proposed semantic change, show the difference and obtain the missing developer decision before changing dependent code. Preserve previous run specifications. Before handoff, require a fresh independent agent to read `idea.md`, original sources/decisions, and actual code for drift, missing functionality, and unnecessary code; repair supported findings and obtain a recheck. If independent review is unavailable, explicitly report that gap and do not claim it passed.
+
+## Keep output compact and progress observable
+
+Before implementation, show the complete planned generation workflow (contract → named functions/modules → verification → documentation) and the scientific execution workflow as separate Mermaid diagrams. Highlight the current node. Read [references/progress-and-output.md](references/progress-and-output.md) for the bundled live viewer, event API, and compact reporting rules. Replace generic implementation nodes with the actual requested functions and dependencies before coding.
+
+Update progress at real stage boundaries, immediately on failure/blockage, and with a brief current-stage status during long work. Generation completion never implies experiment execution. Use the bundled append-only tracker and loopback viewer when execution tools are available; otherwise show updated Mermaid snapshots and explicitly state that chat diagrams are snapshots, not a live process monitor. In read-only `AUDIT`, show chat progress without writing artifacts unless requested.
+
+For research programs that call LLMs, read [references/usage-dashboard.md](references/usage-dashboard.md) to connect real request observations to the same HTML monitor. Show reported, estimated, and unknown usage separately alongside workflow progress. Do not imply that the viewer measures Codex conversation tokens or automatically intercepts SDK calls.
+
+Represent parallel independent stages and dependency joins explicitly. Use the bundled collector for concurrent event producers; highlighting multiple running nodes does not authorize scientific concurrency. On failure stop new submissions, preserve in-flight outcomes, distinguish confirmed cancellation from unknown status, and forbid formal result commitment by the stopped run. Plan optional branches before execution; never label a skipped branch successful.
+
+Observe the final publication boundary in the progress reference: finish fallible progress writes before atomic publication, distinguish preparation from publication, and require the committed result manifest plus exit status before claiming success.
+
+For runtime verification gaps or projects needing local command supervision, read [references/runtime-verification.md](references/runtime-verification.md). It routes to the optional command runner, required-check gate, heartbeat observation, and reproducible model-candidate evaluation. Do not add these tools to projects that already have equivalent scientifically compatible mechanisms.
+
+Write code to files and link them; avoid repeating whole files, unchanged plans, tables, logs, or generated README content in chat. Keep full provenance and verification evidence in the project artifacts. Prefer existing equivalent functions and standard libraries over new abstractions, but never shorten equations, validation, failure evidence, or source-required behavior. This adopts minimality ideas from Ponytail without requiring its installation or persistent instructions.
+
 ## Classify the research task
 
 Choose one mode before planning:
@@ -19,15 +43,15 @@ Choose one mode before planning:
 - `ABLATION`: change exactly the named factor while holding all other scientific factors fixed.
 - `AUDIT`: inspect existing code for divergence without changing it unless requested.
 
-Do not apply exact-reproduction requirements to an adaptation, or describe an adaptation as a reproduction. If the requested mode is unclear and changes the claim, ask or restrict the claim.
+Do not apply exact-reproduction requirements to an adaptation, or describe an adaptation as a reproduction. If the requested mode is unclear and changes the claim, ask and block dependent work; do not silently restrict the requested scope.
 
 ## Establish the scientific contract
 
-Create a compact source-to-code table before implementation:
+Create a compact source-to-code table in `idea.md` before implementation, using stable requirement IDs:
 
-| Component | Required behavior | Source | Classification | Unknown/conflict | Code site | Observable invariant |
+| ID / Component | Required behavior | Source | Classification | Unknown/conflict | Workflow node / Code site | Observable invariant |
 |---|---|---|---|---|---|---|
-| loss, update, data, evaluation, or state step | equation, order, scope, timing | exact section, protocol, or user decision | defined/unknown | unresolved alternatives | planned symbol | assertion, test, or artifact |
+| stable ID / loss, update, data, evaluation, or state step | equation, order, scope, timing | exact section, protocol, or user decision | defined/unknown | unresolved alternatives | planned node and symbol | assertion, test, or artifact |
 
 Classify every material choice as:
 
@@ -36,7 +60,7 @@ Classify every material choice as:
 - `USER_DEFINED`: explicitly authorized for this implementation or experiment.
 - `UNKNOWN`: not recoverable from available evidence.
 
-Do not impose a universal precedence when a paper, supplement, erratum, reference code, benchmark, or user request conflicts. Record the conflict and its scientific effect. Block when choosing a side could change the algorithm, data distribution, comparison, metric, or claim. Otherwise parameterize the alternatives and keep them out of unsupported claims.
+Do not impose a universal precedence when a paper, supplement, erratum, reference code, benchmark, or user request conflicts. Record the conflict and its scientific effect, actively ask for the unresolved decision, and block affected work. Parameterizing or excluding scientific alternatives requires the developer's explicit scope decision; it cannot replace clarification.
 
 ## Model the complete research workflow
 
@@ -83,7 +107,7 @@ Maintain a semantic-delta ledger for every authorized difference:
 
 Include changes to equations, ordering, data membership, preprocessing, retries, repair, filtering, truncation, clipping, imputation, precision, device/backend, dependencies, evaluator, seeds, trial counts, aggregation, and checkpoint selection when they can affect results.
 
-Do not silently implement `UNKNOWN`. Use one of `BLOCK`, `PARAMETERIZE`, `USER_DEFINED`, or `EXCLUDE`, and state the resulting claim boundary.
+Do not silently implement `UNKNOWN`. Ask and use `BLOCK` for dependent work until resolved. Use `PARAMETERIZE` or `EXCLUDE` only when explicitly authorized, with the resulting claim boundary recorded in `idea.md`; `USER_DEFINED` requires a real developer decision.
 
 ## Implement the minimum sufficient causal path
 
@@ -102,7 +126,7 @@ Preserve source-defined:
 
 Raise a specific error when a required dependency, field, backend, model, checkpoint, task, trial, sample, or signal is missing. Never catch a failure and return a usable scientific artifact as though the requested path ran.
 
-Treat retries, resampling, repair, clipping, truncation, filtering, imputation, fallback, or compatibility behavior as valid only when its source, activation conditions, attempt accounting, and effect are explicit and tested.
+Strict fail-fast is mandatory for operational failures. Disable implicit SDK/HTTP retries; do not retry, repair, skip a failed sample, switch capability, or substitute a default to keep an experiment running. Logging, testing, a suppression comment, or a semantic-delta entry does not authorize recovery. Preserve transformations or bounded sampling steps that are explicitly part of the selected scientific method/protocol, with their source, trigger, accounting, and tests. A newly user-designed method must specify such steps before execution; a failure-time request to continue is a new experiment with a restricted claim, never silent recovery of the failed run. Follow the contract's API, concurrency, RNG, and statistical-boundary requirements where applicable.
 
 ## Create the project README
 
@@ -140,7 +164,7 @@ Do not add containerization, orchestration, download mirrors, or packaging machi
 
 ## Separate safety from semantic substitution
 
-Retain authentication, authorization, secret redaction, sandboxing, dangerous-operation approval, resource limits, corruption detection, atomic persistence, rollback before result commitment, and cleanup.
+Retain authentication, authorization, secret redaction, sandboxing, dangerous-operation approval, resource limits, corruption detection, and atomic result commitment. On failure stop the scientific path, propagate the error, and preserve inputs, raw responses, partial artifacts, configuration, seeds, attempt records, and traceback in a distinct failed-run directory. Rollback may prevent publication of an incomplete transaction; it must not delete or overwrite available research evidence. Release handles/locks; never clean the failed run's evidence automatically. Do not persist credentials or unauthorized sensitive data.
 
 Prefer validation that rejects invalid state over logic that changes the experiment to continue. Allow representation normalization only when equivalence is demonstrated; retain the original value, record the transformation, and reject ambiguity.
 
@@ -169,7 +193,7 @@ Report the strongest demonstrated value on each applicable axis. `STATISTICAL` d
 After editing Python, run:
 
 ```bash
-python <skill-dir>/scripts/audit_semantic_fallbacks.py <changed-path> [<changed-path> ...]
+python <skill-dir>/scripts/audit_semantic_fallbacks.py <changed-path> [<changed-path> ...] --min-severity low --fail-on medium
 ```
 
 Use `--min-severity low` for heuristic candidates and `--json` for an audit trail. A source-authorized construct may use a line-local or immediately preceding directive:
@@ -179,9 +203,11 @@ Use `--min-severity low` for heuristic candidates and `--json` for an audit trai
 value = value.clip(-1, 1)
 ```
 
-Use suppression only with a specific scientific reason. The JSON report retains suppressed findings. Treat all findings as review leads, not automatic bugs; the Python auditor cannot prove semantic fidelity.
+Use suppression only with a specific scientific source or a demonstrable false-positive reason, and review every suppressed finding. The JSON report retains suppressed findings. Suppression cannot authorize operational recovery. Treat all findings as review leads, not automatic bugs; the Python auditor cannot prove semantic fidelity or validate a reason's truth. Pin client versions and test one outbound attempt plus error propagation using a local failing transport. Manually inspect unrecognized SDKs, aliases/wrappers, dynamic config, and cross-module initialization.
 
 Manually audit non-Python causal surfaces, including YAML/TOML/JSON configuration, shell or scheduler launchers, notebooks, data-preparation scripts, result aggregation, and plotting code. Check resolved runtime configuration rather than assuming the declared file was used.
+
+Pass resolved JSON/TOML snapshots with `--config path.json path.toml` to detect configured retries/concurrency without executing configuration. The JSON report lists remaining unverified surfaces; missing findings never means those surfaces passed. Export YAML or dynamic settings from the actual launcher explicitly, retain their source and hashes, and test the effective SDK/transport settings rather than trusting a snapshot alone.
 
 ## Audit and report
 
@@ -196,7 +222,10 @@ Expand any stage whose internal behavior can change the scientific result. Inclu
 
 Report:
 
+Keep the following evidence in linked artifacts; summarize only the outcome, executed checks, and unresolved limitations in chat unless the user asks for details. Show the workflow once and report subsequent changes rather than repeating it.
+
 - task mode and strongest justified claim;
+- `idea.md`, its resolved/open questions and requirement-to-node/code/check mapping, plus independent review findings and their disposition;
 - the complete as-implemented workflow, with each stage's invocation, technical principle, code location, inputs, outputs, and downstream use;
 - a concise module-responsibility map and confirmation that each retained component is scientifically or operationally necessary;
 - the created or updated `README.md`, including grounded background, gap, contributions, separate main/ablation instructions, parameter roles, and the actual code workflow;

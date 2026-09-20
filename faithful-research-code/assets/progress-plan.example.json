@@ -1,0 +1,14 @@
+{
+  "title": "Example only — replace with the actual research workflow",
+  "nodes": [
+    {"id": "contract", "track": "generation", "label": "Write idea.md and resolve scientific questions"},
+    {"id": "loader", "track": "generation", "label": "Data loader — dataset/split unresolved (Q-01)", "idea_refs": ["DATA-01"], "description": "Schema example only. Before implementation ask Q-01 for the actual dataset, version, split and preprocessing. Replace this text with inputs → exact source-defined transforms → outputs; load_required_data is a planned example symbol. Include the actual validation check and source in idea.md.", "depends_on": ["contract"]},
+    {"id": "estimator", "track": "generation", "label": "Algorithm decomposition unresolved (Q-02)", "idea_refs": ["METHOD-01"], "description": "Schema example only. Resolve Q-02 and replace this node with ordered algorithm substeps from idea.md, each with equation/source, inputs, outputs, code symbol and verification. Do not start this placeholder as if a method had been selected.", "depends_on": ["contract"]},
+    {"id": "verify", "track": "generation", "label": "Formula, failure, and semantic audit checks", "depends_on": ["loader", "estimator"]},
+    {"id": "readme", "track": "generation", "label": "Reconcile workflow and write README", "depends_on": ["verify"]},
+    {"id": "review", "track": "generation", "label": "Fresh agent reviews idea.md against code and checks", "depends_on": ["readme"]},
+    {"id": "load", "track": "execution", "label": "Load dataset/split — unresolved (Q-01)", "idea_refs": ["DATA-01"], "description": "Replace with the actual resolved data contract and runtime verification before running any experiment."},
+    {"id": "estimate", "track": "execution", "label": "Algorithm substeps — unresolved (Q-02)", "idea_refs": ["METHOD-01"], "description": "Expand into the actual resolved method steps and dependencies before execution.", "depends_on": ["load"]},
+    {"id": "prepare_commit", "track": "execution", "label": "Prepare validated atomic publication (readiness, not published)", "depends_on": ["estimate"]}
+  ]
+}

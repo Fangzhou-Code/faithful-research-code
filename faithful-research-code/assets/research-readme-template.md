@@ -1,5 +1,9 @@
 # <Method or project name>
 
+Scientific specification: [idea.md](idea.md). It records the problem, data, ordered method, experiments, developer decisions, and requirement-to-code/check mapping. The sections below summarize that specification and document actual usage; keep detailed scientific decisions in one place.
+
+Independent code review: <link to the verification report and reviewed specification/code versions, findings and recheck; explicitly state if not performed>.
+
 ## Background
 
 <Define the scientific problem, setting, inputs, outputs, and scope from supplied evidence.>
@@ -118,6 +122,8 @@
 
 ### Code workflow
 
+<Insert reconciled Mermaid diagrams for generation and scientific execution. Link the task-specific progress plan, retained event journal, and viewer command. State whether progress is live or a snapshot; generation completion must not imply experiment execution.>
+
 | Phase/round | Module or entry point | Invocation/configuration | Technical principle and implementation | Inputs -> outputs | Downstream use | Failure behavior | Verification |
 |---|---|---|---|---|---|---|---|
 | `<stage>` | `<symbol>` | `<how to invoke>` | `<how it works and why the method requires it>` | `<artifacts>` | `<consumer>` | `<fail-fast or source-defined behavior>` | `<executed check>` |
@@ -127,6 +133,10 @@
 <When applicable, show selection/ranking rules, prompt roles and variables, inserted context, parsing, labels/rewards, and downstream use. Remove only when inapplicable.>
 
 ### Artifact release and validation
+
+- **Failure evidence:** `<failed-run directory, preserved raw/partial artifacts, attempt ledger, redacted traceback; no automatic reuse or cleanup>`
+- **API/determinism controls:** `<if applicable: disabled retry layers, single-attempt failure tests, pre-import thread settings, stable RNG stream map, paired-ablation policy>`
+- **Statistical boundaries:** `<if applicable: quantile method/version, estimator domain, fail-fast or predeclared non-estimable reporting, denominator counts>`
 
 - **Release state:** `<LOCAL / ANONYMOUS_REVIEW / ARCHIVAL_RELEASE / INDEPENDENT_EVALUATION>`
 - **Artifact inventory:** `<path to inventory or concise list>`

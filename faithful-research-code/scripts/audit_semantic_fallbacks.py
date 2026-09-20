@@ -11,13 +11,22 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import io
 import re
+import tokenize
+import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
 
 
 RANK = {"high": 3, "medium": 2, "low": 1}
+THREAD_VARIABLES = {"OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+                    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS"}
+CONCURRENT_CALLS = {"asyncio.gather", "asyncio.create_task", "asyncio.ensure_future",
+                    "asyncio.TaskGroup", "asyncio.as_completed", "asyncio.to_thread",
+                    "concurrent.futures.ThreadPoolExecutor", "concurrent.futures.ProcessPoolExecutor",
+                    "multiprocessing.Pool", "multiprocessing.pool.Pool", "joblib.Parallel"}
 SUPPRESSION_RE = re.compile(
     r"#\s*research-fidelity:\s*allow=(RF\d{3})\s+reason=(.+?)\s*$"
 )
@@ -72,6 +81,10 @@ def literal_bool(node: ast.AST | None) -> bool | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, bool):
         return node.value
     return None
+
+
+def literal_zero(node: ast.AST | None) -> bool:
+    return isinstance(node, ast.Constant) and type(node.value) is int and node.value == 0
 
 
 def keyword(call: ast.Call, name: str) -> ast.AST | None:
@@ -149,17 +162,218 @@ def contains_string(node: ast.AST, fragment: str) -> bool:
     )
 
 
+class LocalBindings(ast.NodeVisitor):
+    """Find lexical bindings without entering a nested execution scope."""
+
+    def __init__(self) -> None:
+        self.names: set[str] = set()
+        self.outer_names: set[str] = set()
+        self.global_names: set[str] = set()
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self.names.add(node.id)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        self.names.update(item.asname or item.name.split('.')[0] for item in node.names)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        self.names.update(item.asname or item.name for item in node.names)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.names.add(node.name)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+    visit_ClassDef = visit_FunctionDef
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        pass
+
+    def visit_comprehension(self, node: ast.comprehension) -> None:
+        # Iteration targets belong to the comprehension, not the enclosing function.
+        self.visit(node.iter)
+        for condition in node.ifs:
+            self.visit(condition)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.names.add(node.name)
+        self.generic_visit(node)
+
+    def visit_Global(self, node: ast.Global) -> None:
+        # Runtime writes through global/nonlocal are not propagated to other scopes.
+        self.outer_names.update(node.names)
+        self.global_names.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.outer_names.update(node.names)
+
+
 class Auditor(ast.NodeVisitor):
     def __init__(self, path: Path, source: str) -> None:
         self.path = path
         self.lines = source.splitlines()
+        self.comments = {token.start[0]: token.string
+                         for token in tokenize.generate_tokens(io.StringIO(source).readline)
+                         if token.type == tokenize.COMMENT}
         self.findings: list[Finding] = []
+        self.scopes: list[tuple[str, dict[str, str | None]]] = [("module", {})]
+        self.numeric_import_seen = False
+        self.function_depth = 0
+
+    @property
+    def aliases(self) -> dict[str, str | None]:
+        return self.scopes[-1][1]
+
+    def resolve(self, node: ast.AST) -> str:
+        name = dotted_name(node)
+        root, dot, rest = name.partition(".")
+        for index in range(len(self.scopes) - 1, -1, -1):
+            kind, bindings = self.scopes[index]
+            # A class namespace is not an enclosing lexical scope for methods.
+            if kind == "class" and index != len(self.scopes) - 1:
+                continue
+            if root in bindings:
+                root = bindings[root] or "<unresolved>"
+                break
+        return root + (dot + rest if dot else "")
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self.aliases[node.id] = None
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
+        # Assignment expressions escape a comprehension's iteration scope.
+        for kind, bindings in reversed(self.scopes):
+            if kind != "comprehension":
+                bindings[node.target.id] = None
+                break
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for item in node.names:
+            self.aliases[item.asname or item.name.split(".")[0]] = (
+                item.name if item.asname else item.name.split(".")[0]
+            )
+            self.numeric_import_seen |= item.name.split(".")[0] in {"numpy", "scipy", "torch"}
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for item in node.names:
+            self.aliases[item.asname or item.name] = f"{node.module}.{item.name}"
+        self.numeric_import_seen |= (node.module or "").split(".")[0] in {"numpy", "scipy", "torch"}
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        for target in node.targets:
+            if (isinstance(target, ast.Subscript)
+                    and self.resolve(target.value) == "os.environ"
+                    and literal_string(target.slice) in THREAD_VARIABLES
+                    and (self.numeric_import_seen or self.function_depth)):
+                self.add(target, "high" if self.numeric_import_seen else "medium", "RF702", "determinism",
+                         "Thread environment is assigned after a numerical import." if self.numeric_import_seen
+                         else "Function execution order is unresolved; verify thread configuration in the launcher.",
+                         "Configure the launcher before any direct or transitive numerical import.")
+        self.visit(node.value)
+        for target in node.targets:
+            self.visit(target)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        # Evaluate the RHS before rebinding the target, as for ordinary assignment.
+        # A module/class annotation alone does not replace an existing binding.
+        if node.value is not None:
+            self.visit(node.value)
+            self.visit(node.target)
+        elif not isinstance(node.target, ast.Name):
+            self.visit(node.target)
+        self.visit(node.annotation)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call) and self.resolve(decorator) in {
+                "tenacity.retry", "retry.retry"
+            }:
+                self.add(decorator, "high", "RF501", "retry",
+                         "Bare decorator enables automatic retries.",
+                         "Operational retries are prohibited; retain only source-defined method steps.")
+            self.visit(decorator)
+        # Defaults and annotations execute in the defining scope, not the body.
+        self.visit(node.args)
+        if node.returns:
+            self.visit(node.returns)
+        bindings = LocalBindings()
+        for statement in node.body:
+            bindings.visit(statement)
+        for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):
+            bindings.names.add(argument.arg)
+        for argument in (node.args.vararg, node.args.kwarg):
+            if argument:
+                bindings.names.add(argument.arg)
+        self.aliases[node.name] = None
+        previous_numeric = self.numeric_import_seen
+        self.numeric_import_seen = False
+        self.function_depth += 1
+        local = dict.fromkeys(bindings.names - bindings.outer_names)
+        local.update({name: self.scopes[0][1].get(name) for name in bindings.global_names})
+        self.scopes.append(("function", local))
+        for statement in node.body:
+            self.visit(statement)
+        self.scopes.pop()
+        self.function_depth -= 1
+        self.numeric_import_seen = previous_numeric
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        for expression in (*node.decorator_list, *node.bases, *node.keywords):
+            self.visit(expression)
+        self.scopes.append(("class", {}))
+        for statement in node.body:
+            self.visit(statement)
+        self.scopes.pop()
+        self.aliases[node.name] = None
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self.visit(node.args)
+        bindings = LocalBindings()
+        bindings.visit(node.body)
+        bindings.names.update(arg.arg for arg in (*node.args.posonlyargs, *node.args.args,
+                                                  *node.args.kwonlyargs))
+        bindings.names.update(arg.arg for arg in (node.args.vararg, node.args.kwarg) if arg)
+        previous_numeric = self.numeric_import_seen
+        self.numeric_import_seen = False
+        self.function_depth += 1
+        self.scopes.append(("function", dict.fromkeys(bindings.names)))
+        self.visit(node.body)
+        self.scopes.pop()
+        self.function_depth -= 1
+        self.numeric_import_seen = previous_numeric
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        # Only the first iterable is evaluated in the defining scope.
+        self.visit(node.generators[0].iter)
+        targets = {child.id for generator in node.generators
+                   for child in ast.walk(generator.target) if isinstance(child, ast.Name)}
+        self.scopes.append(("comprehension", dict.fromkeys(targets)))
+        for index, generator in enumerate(node.generators):
+            if index:
+                self.visit(generator.iter)
+            for condition in generator.ifs:
+                self.visit(condition)
+        if isinstance(node, ast.DictComp):
+            self.visit(node.key)
+            self.visit(node.value)
+        else:
+            self.visit(node.elt)
+        self.scopes.pop()
+
+    visit_SetComp = visit_ListComp
+    visit_DictComp = visit_ListComp
+    visit_GeneratorExp = visit_ListComp
 
     def suppression_for(self, rule: str, line: int) -> str | None:
         for candidate in (line, line - 1):
             if candidate < 1 or candidate > len(self.lines):
                 continue
-            match = SUPPRESSION_RE.search(self.lines[candidate - 1])
+            match = SUPPRESSION_RE.search(self.comments.get(candidate, ""))
             if not match or match.group(1) != rule:
                 continue
             reason = match.group(2).strip()
@@ -196,6 +410,8 @@ class Auditor(ast.NodeVisitor):
         )
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.aliases[node.name] = None
         broad = is_broad_handler(node)
         parsing_errors = {
             "JSONDecodeError",
@@ -204,6 +420,12 @@ class Auditor(ast.NodeVisitor):
             "ValueError",
         }
         for child in handler_nodes(node.body):
+            if not broad and (
+                isinstance(child, (ast.Pass, ast.Continue, ast.Break, ast.Return))
+            ):
+                self.add(child, "medium", "RF009", "control-flow",
+                         "Typed exception handler can swallow failure or substitute a result.",
+                         "A narrow exception type does not make skipping or default output scientifically valid.")
             if isinstance(child, ast.Pass) and broad:
                 self.add(
                     child,
@@ -310,8 +532,65 @@ class Auditor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
-        name = dotted_name(node.func)
+        name = self.resolve(node.func)
         leaf = name.split(".")[-1]
+
+        # This is deliberately a candidate detector, not cross-module data-flow analysis.
+        llm_client = name in {
+            f"{module}.{client}" for module in ("openai", "anthropic")
+            for client in ("OpenAI", "AsyncOpenAI", "AzureOpenAI", "AsyncAzureOpenAI",
+                           "Anthropic", "AsyncAnthropic", "AnthropicBedrock",
+                           "AsyncAnthropicBedrock", "AnthropicVertex", "AsyncAnthropicVertex")
+        }
+        if llm_client and not literal_zero(keyword(node, "max_retries")):
+            self.add(node, "high", "RF504", "implicit-retry",
+                     "LLM client does not explicitly disable SDK retries.",
+                     "Use max_retries=0 and verify the pinned SDK and transport at runtime.")
+        for item in node.keywords:
+            if item.arg in {"max_retries", "retries", "retry", "retry_config"} and not (
+                literal_zero(item.value) or literal_bool(item.value) is False
+            ):
+                self.add(node, "high", "RF505", "retry",
+                         f"{item.arg} may enable retries or has an unresolved policy.",
+                         "Disable operational retries at every SDK, transport, and proxy layer.")
+        if name.startswith(("tenacity.", "backoff.")) or leaf in {"Retry", "Retrying", "AsyncRetrying"}:
+            self.add(node, "high", "RF501", "retry",
+                     f"{name} constructs a retry policy.",
+                     "Inspect defaults and attempts; a logged policy is not authorization.")
+        if name in CONCURRENT_CALLS or leaf in {"ThreadPoolExecutor", "ProcessPoolExecutor"}:
+            self.add(node, "high", "RF601", "concurrency",
+                     f"{name} schedules concurrent work.",
+                     "Default to serial execution; require predeclared worker seeds, ordering, and failure propagation.")
+        if literal_bool(keyword(node, "return_exceptions")) is True:
+            self.add(node, "high", "RF602", "control-flow",
+                     "return_exceptions=True turns task failures into result values.",
+                     "Failures must stop the research path and remain outside aggregation.")
+        if name in {f"numpy.{x}" for x in ("quantile", "percentile", "nanquantile", "nanpercentile")}:
+            # a, q, axis, out, overwrite_input, method (NumPy >= 1.22).
+            positional = not any(isinstance(arg, ast.Starred) for arg in node.args[:6])
+            method = keyword(node, "method")
+            if method is None and positional and len(node.args) >= 6:
+                method = node.args[5]
+            unpacked = any(isinstance(arg, ast.Starred) for arg in node.args) or any(
+                item.arg is None for item in node.keywords)
+            if method is None or unpacked:
+                self.add(node, "medium", "RF701", "statistics",
+                         "Quantile arguments are unpacked; verify the resolved method at runtime." if unpacked
+                         else "Quantile estimator method is implicit.",
+                         "Specify the source-defined method and pin NumPy; do not invent linear interpolation.")
+        if name in {"numpy.nanquantile", "numpy.nanpercentile"}:
+            self.add(node, "medium", "RF206", "aggregation",
+                     "NaN quantiles exclude invalid observations.",
+                     "Verify explicit population and failure accounting.")
+        if name in {"os.environ.setdefault", "os.environ.update", "os.putenv"}:
+            keys = [literal_string(arg) for arg in node.args[:1]]
+            if name.endswith("update") and node.args and isinstance(node.args[0], ast.Dict):
+                keys = [literal_string(k) for k in node.args[0].keys]
+            keys.extend(item.arg for item in node.keywords)
+            if set(keys) & THREAD_VARIABLES:
+                self.add(node, "high" if self.numeric_import_seen else "medium", "RF702", "determinism",
+                         "Thread environment mutation needs launcher-order review.",
+                         "Set exact values before numerical imports; setdefault can inherit conflicting values.")
 
         if leaf == "getattr" and len(node.args) >= 3:
             self.add(
@@ -440,7 +719,7 @@ class Auditor(ast.NodeVisitor):
         if leaf in {"retry", "stop_after_attempt", "retry_if_exception_type"}:
             self.add(
                 node,
-                "low",
+                "high",
                 "RF501",
                 "retry",
                 f"{leaf} configures automatic retry behavior.",
@@ -541,17 +820,63 @@ def audit(path: Path) -> tuple[list[Finding], str | None]:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
     except (OSError, UnicodeError, SyntaxError) as exc:
+        # research-fidelity: allow=RF009 reason="Audit parse failure is explicit error data; main exits 2 and reports the affected file."
         return [], str(exc)
     visitor = Auditor(path, source)
     visitor.visit(tree)
     return visitor.findings, None
 
 
+def audit_config(path: Path) -> tuple[list[Finding], str | None]:
+    """Inspect explicitly supplied resolved JSON/TOML without executing configuration."""
+    try:
+        source = path.read_text(encoding="utf-8")
+        if path.suffix.lower() == ".json":
+            config = json.loads(source)
+        elif path.suffix.lower() == ".toml":
+            config = tomllib.loads(source)
+        else:
+            raise ValueError("Only resolved JSON/TOML supported; export other formats explicitly")
+    except (OSError, UnicodeError, ValueError) as error:
+        # research-fidelity: allow=RF009 reason="Configuration parse errors are reported and cause CLI exit 2; no valid config is substituted."
+        return [], str(error)
+    findings = []
+
+    def walk(value, location):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                address = f"{location}.{key}"
+                normalized = key.lower()
+                rule = None
+                if normalized in {"max_retries", "retries", "retry", "retry_config"}:
+                    disabled = (type(item) is int and item == 0) or item is False
+                    if not disabled:
+                        rule = "RF801"
+                elif normalized in {"max_attempts", "total_max_attempts"}:
+                    if type(item) is not int or item != 1:
+                        rule = "RF801"
+                elif normalized in {"max_workers", "concurrency", "parallelism", "n_jobs"}:
+                    if type(item) is not int or item != 1:
+                        rule = "RF802"
+                if rule:
+                    findings.append(Finding(str(path), 1, 1, "high", rule, "resolved-config",
+                        f"{address}: retry/concurrency policy is not statically disabled or serial; review required.",
+                        "Location is a structural key, not a source line. Verify effective client settings and outbound attempts."))
+                walk(item, address)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                walk(item, f"{location}[{index}]")
+
+    walk(config, "$")
+    return findings, None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Report possible semantic fallbacks in Python research code."
     )
-    parser.add_argument("paths", nargs="+", help="Python files or directories")
+    parser.add_argument("paths", nargs="*", help="Python files or directories")
+    parser.add_argument("--config", nargs="+", default=[], help="Resolved JSON/TOML snapshots; never executable config")
     parser.add_argument("--json", action="store_true", help="Emit JSON")
     parser.add_argument(
         "--min-severity",
@@ -575,8 +900,20 @@ def main() -> int:
     files = python_files(args.paths)
     findings: list[Finding] = []
     errors: list[dict[str, str]] = []
+    for raw in args.paths:
+        path = Path(raw)
+        if not path.exists() or (path.is_file() and path.suffix != ".py"):
+            errors.append({"path": raw, "error": "Missing path or unsupported file type; nothing audited."})
+    if not files and not args.config:
+        errors.append({"path": ", ".join(args.paths), "error": "No Python files found; audit is incomplete."})
     for path in files:
         found, error = audit(path)
+        findings.extend(found)
+        if error:
+            errors.append({"path": str(path), "error": error})
+    config_paths = sorted({Path(raw) for raw in args.config})
+    for path in config_paths:
+        found, error = audit_config(path)
         findings.extend(found)
         if error:
             errors.append({"path": str(path), "error": error})
@@ -596,7 +933,9 @@ def main() -> int:
             json.dumps(
                 {
                     "summary": {
-                        "files": len(files),
+                        "files": len(files) + len(config_paths),
+                        "python_files": len(files),
+                        "config_files": len(config_paths),
                         "findings": len(visible),
                         "suppressed_low_severity": lower_severity,
                         "errors": len(errors),
@@ -606,6 +945,11 @@ def main() -> int:
                     "findings": [asdict(item) for item in visible],
                     "suppressed": [asdict(item) for item in suppressed],
                     "errors": errors,
+                    "coverage": {
+                        "claim": "heuristic review only; absence of findings is not fidelity proof",
+                        "unverified": ["dynamic/cross-module configuration", "custom SDKs and wrappers",
+                                       "effective runtime settings", "outbound attempt counts", "non-Python code"],
+                    },
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -626,7 +970,7 @@ def main() -> int:
         for error in errors:
             print(f"{error['path']}: parse-error: {error['error']}")
         print(
-            f"Audited {len(files)} Python files; {len(visible)} displayed findings; "
+            f"Audited {len(files)} Python files and {len(config_paths)} resolved config files; {len(visible)} displayed findings; "
             f"{lower_severity} lower-severity findings suppressed by display threshold; "
             f"{len(suppressed)} source-authorized findings suppressed; "
             f"{len(errors)} parse errors."

@@ -1,0 +1,12 @@
+{
+  "title": "Local runner demonstration — no paper reproduction claim",
+  "max_parallel": 2,
+  "parallelism_source": "This demonstration declares two independent local commands",
+  "process_scope": "direct_children_only",
+  "required_checks": ["equation"],
+  "nodes": [
+    {"id": "equation", "track": "execution", "label": "Check the hand-computed SNIS example", "argv": ["{python}", "-c", "assert (1*2 + 3*4 + 2*8) / (1+3+2) == 5"], "timeout_seconds": 5},
+    {"id": "independent", "track": "execution", "label": "Independent local demonstration stage", "argv": ["{python}", "-c", "import time; time.sleep(2); print('Independent command finished')"], "timeout_seconds": 5},
+    {"id": "join", "track": "execution", "label": "Join successful commands", "depends_on": ["equation", "independent"], "argv": ["{python}", "-c", "print('Declared prerequisites passed; this is not a scientific replication')"], "timeout_seconds": 5}
+  ]
+}

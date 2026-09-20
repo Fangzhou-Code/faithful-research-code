@@ -2,6 +2,8 @@
 
 Use this reference to translate scientific specifications into executable code without changing their meaning.
 
+Record this project's scientific contract in project-root `idea.md` before implementation. Follow [idea-and-review.md](idea-and-review.md) for active clarification, stable requirement IDs, concrete workflow nodes, authorized changes, and fresh independent-agent review. Keep original sources/developer decisions authoritative; README and graphs reference the same specification rather than creating competing requirements.
+
 ## Contents
 
 1. Task modes and claims
@@ -17,6 +19,8 @@ Use this reference to translate scientific specifications into executable code w
 11. Reviewer-executable artifacts
 12. README deliverable contract
 13. Evidence and reporting templates
+14. API, concurrency, and random-stream controls
+15. Statistical boundary conditions
 
 ## Task modes and claims
 
@@ -47,7 +51,7 @@ Use a conflict ledger:
 | Conflict ID | Component | Source A | Source B | Observable difference | Claim impact | Resolution |
 |---|---|---|---|---|---|---|
 
-Resolve a conflict only through an explicit task definition, source clarification, or user decision. If unresolved, use `BLOCK`, `PARAMETERIZE`, or `EXCLUDE`; never pick the more convenient implementation silently.
+Resolve a conflict only through an explicit task definition, source clarification, or user decision. Actively ask about consequential unresolved choices, record the question in `idea.md`, and `BLOCK` dependent work until answered. `PARAMETERIZE` and `EXCLUDE` require explicit developer authorization; neither is a substitute for clarification. Already resolved independent work may continue.
 
 Classify choices as `METHOD_DEFINED`, `PROTOCOL_DEFINED`, `USER_DEFINED`, or `UNKNOWN`. Do not call a customary choice method-defined without evidence.
 
@@ -246,7 +250,7 @@ For every default, catch, retry, repair, alternate path, or compatibility branch
 
 > Can this path produce an artifact or result that is consumed, trained on, evaluated, aggregated, or reported as though the requested method executed?
 
-If yes, prohibit it unless the method, protocol, or user defines it and its activation is observable.
+If yes, prohibit operational recovery: fail immediately, preserve evidence, and propagate an exception. Merely documenting, testing, logging, or authorizing a convenience fallback is insufficient. Only a step explicitly defined in the selected scientific algorithm/protocol before execution (including a user-designed method) can be retained as part of that method. Record its exact source, trigger, bounded attempt budget, original and transformed values, and denominator accounting. If the source conflicts with the user's no-retry requirement, block that component and resolve the scientific conflict; do not silently change the algorithm. A changed failure policy requires a new experiment identity and cannot inherit the original reproduction claim.
 
 ### Common prohibited patterns
 
@@ -258,7 +262,7 @@ If yes, prohibit it unless the method, protocol, or user defines it and its acti
 - failed sample, task, or trial → skip it and aggregate the remainder;
 - official evaluator unavailable → report a proxy metric or execution success;
 - broad exception → warn and return a usable partial result;
-- failed generation → retry or resample without counting the attempt as specified;
+- failed generation → operational retry or resampling to obtain a successful output;
 - old schema/configuration → run a compatibility algorithm with different semantics;
 - unavailable accelerator → change precision, batch semantics, or algorithm to continue.
 
@@ -266,16 +270,46 @@ Prefer an error that names the violated invariant, expected and observed values,
 
 ## Safety and operational boundaries
 
-Retain controls that reject, contain, or roll back failure without manufacturing scientific output:
+Retain controls that reject or contain failure without manufacturing scientific output or destroying evidence:
 
 - authentication, authorization, secrets, sandboxing, and destructive-action approval;
 - schema, type, shape, domain, dependency, version, coverage, and hash validation;
 - resource ceilings that stop before committing a result;
-- atomic persistence, corruption detection, rollback, and cleanup;
+- atomic result publication and corruption detection; retain incomplete files separately from committed results;
+- transaction rollback only to prevent publication, while preserving available inputs, partial artifacts, raw outputs, attempt records, config, seeds, and traceback outside the transaction;
+- release resources and locks, but never automatically delete, overwrite, or reuse failed-run evidence;
 - explicit unsupported-mode errors;
 - deterministic representation normalization with proven equivalence and retained originals.
 
 Do not treat availability as safety. A fallback that keeps a service running but changes samples, numerical values, control flow, model capability, or metrics is a scientific semantic change.
+
+Use a fresh run ID/output directory for a subsequent invocation. Never let a failed run enter successful-run aggregation or silently reduce the scheduled denominator. Capture failure evidence with secret redaction and applicable data access controls; a disk-full or logging failure must not replace the original scientific exception. Hard kills may leave a last-known running state; do not infer success or invent a traceback.
+
+## API, concurrency, and random-stream controls
+
+### External requests
+
+Default to one application-level outbound attempt per declared sample and serial execution. Pin SDK/transport versions and disable retries at every layer: for example `OpenAI(max_retries=0)`, `Anthropic(max_retries=0)`, Requests adapters, urllib3 policies, HTTPX transport retries, cloud SDK retry configs, decorators, middleware, and any controllable proxy. Missing configuration or `None` is not proof of disabled retry. HTTP 429/5xx, timeouts, connection errors, and invalid responses must propagate; Requests/HTTPX callers must explicitly reject unsuccessful status codes (for example `raise_for_status()`). Do not regenerate output, switch models/providers, repair JSON, or drop samples after failure.
+
+For each supported client, test against a deterministic local failing transport/server: 429, 500, timeout/connection failure, and malformed response. Assert exactly one outbound attempt, raised failure, preserved attempt identity, no downstream metric, and no next sample. Log requested/resolved model identity, SDK version, sampling parameters, sample/request ID, raw response or error, and observed attempts, without secrets. Service-side nondeterminism or retries beyond client control remain a stated limitation; client seeds do not prove server reproducibility.
+
+Concurrency is not inherently invalid, and `asyncio.gather` preserves result order even though scheduling/completion order can differ. Default to serial. Enable concurrency only when the selected protocol predeclares its worker count, sample-to-stream mapping, dispatch/order constraints, deterministic aggregation, shared-state isolation, and failure propagation. On the first failure stop new submissions, cancel pending work where possible, record already in-flight work, and publish no result from the failed run. Never use `return_exceptions=True` to treat errors as observations. Threads used solely by the progress viewer are outside the scientific request path.
+
+### Initialization and random streams
+
+Set relevant `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, and other backend thread variables in the launcher **before any direct or transitive import** of NumPy/SciPy/Torch. Use protocol-defined values, not a universal value of one. Reject a conflicting inherited environment; `setdefault` alone does not enforce it. For an already initialized notebook/process, restart explicitly with the correct environment instead of claiming late assignments took effect. Verify and record effective thread pools and backend deterministic settings when claim-relevant.
+
+Derive branch/replicate/worker RNGs from a recorded root and stable identifiers before execution; never inherit another branch's consumed global RNG. `SeedSequence.spawn()` is suitable with a frozen ordered branch registry and persisted spawn keys. Adding/reordering branches must not remap existing streams; explicit stable spawn keys are an alternative. Do not use Python's process-randomized `hash()` for seed derivation. Isolate bootstrap RNGs from training and data-split RNGs, and give each bootstrap replicate a stable identity. Preserve all relevant Python/NumPy/Torch/device RNG states for source-defined checkpoint restoration.
+
+For paired ablations/common-random-number comparisons, create separate RNG objects initialized from the same declared stream identity for shared factors; use independent child streams only for factors intended to be independent. A universal rule assigning different seeds to every arm can itself break the comparison. Test running branch B alone and after A, and changing execution order, to verify B's intended randomness is unchanged.
+
+## Statistical boundary conditions
+
+For NumPy quantile/percentile calls, specify the source-defined `method` explicitly and freeze the dependency version, reduction axis, dtype, weighting, and missing-value policy. Do not silently choose `linear` when the source leaves the estimator unresolved. Older pinned versions may require an explicit `interpolation` argument instead: document that version-specific API; never implement exception-driven compatibility fallback. Explicit `method` removes estimator ambiguity but does not guarantee bitwise equality across versions/backends.
+
+Before OPE or any weighted estimator, validate the domain prescribed by that estimator: sample count, finite rewards/weights, shape/alignment, behavior-policy support, and denominator. Check empty slices, zero/non-finite weight sums, and any estimator-specific negative-weight constraint. Preserve the source distinction between ordinary importance sampling (often divided by sample count) and self-normalized importance sampling (divided by weight sum); a zero weight sum is not universally undefined for all OPE estimators. Never add epsilon, clip weights, use `nan_to_num`, or report `0.000` to repair an undefined estimator.
+
+Default: raise a specific error and stop before result commitment. Only when the reporting protocol explicitly defines structural non-estimability may reporting produce `{value: null, status: NOT_ESTIMABLE, reason: EMPTY_SLICE|ZERO_WEIGHT|..., n_scheduled: ..., n_observed: ...}` with a table label `NA`. This is a non-result, never a successful numeric observation or a recovery from an API/data failure. Keep it out of numeric aggregation without silently changing the planned population; report scheduled/valid/failed/non-estimable counts. Never serialize non-finite numbers as JSON NaN/Infinity. Test empty, zero-weight, invalid support, non-finite, and hand-computed valid cases.
 
 ## Verification design
 
